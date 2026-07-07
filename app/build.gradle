@@ -3,6 +3,35 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Absolute paths used by both Gradle and GitHub Actions.
+def sherpaAarName = 'sherpa-onnx-static-link-onnxruntime-1.12.31.aar'
+def sherpaAar = file("$projectDir/libs/$sherpaAarName")
+def downloadSherpaScript = file("$rootDir/scripts/download_sherpa_asr.sh")
+
+tasks.register('removeLegacySherpaEngine') {
+    group = 'jlxc'
+    description = 'Remove stale SherpaOnnxAsrEngine.java/.kt files left from older ZIP copies.'
+    doLast {
+        delete fileTree('src/main/java/com/jlxc/teleprompter/asr') {
+            include 'SherpaOnnxAsrEngine.java'
+            include 'SherpaOnnxAsrEngine.kt'
+        }
+    }
+}
+
+tasks.register('ensureSherpaAsrAssets', Exec) {
+    group = 'jlxc'
+    description = 'Download sherpa-onnx Android AAR and xlarge Chinese ASR model before compiling.'
+    dependsOn tasks.named('removeLegacySherpaEngine')
+    workingDir rootDir
+    commandLine 'bash', downloadSherpaScript.absolutePath
+    doFirst {
+        if (!downloadSherpaScript.exists()) {
+            throw new GradleException("Missing download script: ${downloadSherpaScript}")
+        }
+    }
+}
+
 android {
     namespace 'com.jlxc.teleprompter'
     compileSdk 35
@@ -15,8 +44,8 @@ android {
         applicationId 'com.jlxc.teleprompter'
         minSdk 23
         targetSdk 35
-        versionCode 5
-        versionName '0.3.2-xlarge-asr-deepfix'
+        versionCode 6
+        versionName '0.3.3-xlarge-asr-checked'
         ndk {
             abiFilters 'arm64-v8a'
         }
@@ -30,14 +59,42 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+
+    sourceSets {
+        main {
+            java {
+                // Older ZIP versions used this exact class name in Java/Kotlin.
+                // If the user copies a new ZIP over an old repo without deleting old files,
+                // D8 will see two classes. Exclude them from the source set as a second safety net.
+                exclude '**/SherpaOnnxAsrEngine.java'
+                exclude '**/SherpaOnnxAsrEngine.kt'
+            }
+        }
+    }
 }
 
+afterEvaluate {
+    // Make a plain `gradle :app:assembleDebug` safe even if the GitHub workflow forgot
+    // to run scripts/download_sherpa_asr.sh first.
+    def mustHaveSherpa = [
+            'preBuild',
+            'preDebugBuild',
+            'checkDebugAarMetadata',
+            'compileDebugKotlin',
+            'compileDebugJavaWithJavac',
+            'mergeDebugAssets',
+            'mergeDebugNativeLibs',
+            'packageDebug'
+    ] as Set
+    tasks.configureEach { t ->
+        if (mustHaveSherpa.contains(t.name)) {
+            t.dependsOn tasks.named('ensureSherpaAsrAssets')
+        }
+    }
+}
 
 dependencies {
-    def sherpaAar = file('libs/sherpa-onnx-static-link-onnxruntime-1.12.31.aar')
-    if (sherpaAar.exists()) {
-        implementation files(sherpaAar)
-    } else {
-        logger.lifecycle('sherpa-onnx AAR not found yet. GitHub Actions runs scripts/download_sherpa_asr.sh before build; local builds should run it manually for real ASR runtime.')
-    }
+    // Always declare the real AAR. The ensureSherpaAsrAssets task downloads it before tasks
+    // that resolve the debug classpath, preventing 48KB empty APKs and missing-runtime builds.
+    implementation files(sherpaAar)
 }
