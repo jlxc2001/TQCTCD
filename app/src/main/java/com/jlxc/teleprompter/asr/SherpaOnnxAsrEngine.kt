@@ -56,7 +56,7 @@ class SherpaOnnxAsrEngine(context: Context) : AsrEngine {
         var recognizer: OnlineRecognizer? = null
         var stream: com.k2fsa.sherpa.onnx.OnlineStream? = null
         try {
-            emitReady(listener, "$name · 正在加载模型")
+            emitReady(listener, "${name()} · 正在加载模型")
             val modelConfig = OnlineModelConfig(
                 transducer = OnlineTransducerModelConfig(
                     encoder = AsrModelInfo.ENCODER,
@@ -93,7 +93,7 @@ class SherpaOnnxAsrEngine(context: Context) : AsrEngine {
             )
             audioRecord = record
             record.startRecording()
-            emitReady(listener, "$name · ${AsrModelInfo.MODEL_LABEL} · 正在听 · 支持回读上一段")
+            emitReady(listener, "${name()} · ${AsrModelInfo.MODEL_LABEL} · 正在听 · 支持回读上一段")
 
             val shorts = ShortArray(bufferSize / 2)
             var lastPartial = ""

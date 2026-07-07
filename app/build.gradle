@@ -32,6 +32,17 @@ android {
     }
 }
 
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.aar'])
+    def sherpaAar = file('libs/sherpa-onnx-static-link-onnxruntime-1.12.31.aar')
+    if (sherpaAar.exists()) {
+        implementation(name: 'sherpa-onnx-static-link-onnxruntime-1.12.31', ext: 'aar')
+    } else {
+        logger.lifecycle('sherpa-onnx AAR not found yet. GitHub Actions runs scripts/download_sherpa_asr.sh before build; local builds should run it manually for real ASR runtime.')
+    }
 }
