@@ -11,6 +11,7 @@ import android.widget.TextView;
 
 import com.jlxc.teleprompter.data.Script;
 import com.jlxc.teleprompter.data.ScriptStore;
+import com.jlxc.teleprompter.remote.RemoteServerHub;
 import com.jlxc.teleprompter.ui.UI;
 import com.jlxc.teleprompter.util.TextUtil;
 
@@ -25,6 +26,7 @@ public class ScriptListActivity extends Activity {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        RemoteServerHub.ensureStarted(this);
         store = new ScriptStore(this);
         LinearLayout root = UI.vertical(this);
         LinearLayout top = new LinearLayout(this);

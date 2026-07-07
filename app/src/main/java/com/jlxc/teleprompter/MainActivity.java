@@ -7,11 +7,13 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.jlxc.teleprompter.remote.RemoteServerHub;
 import com.jlxc.teleprompter.ui.UI;
 
 public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        RemoteServerHub.ensureStarted(this);
         LinearLayout root = UI.vertical(this);
         TextView title = UI.title(this, "JLXC 提词器");
         root.addView(title);
@@ -23,9 +25,17 @@ public class MainActivity extends Activity {
         root.addView(settings);
         root.addView(remote);
 
+        TextView remoteStatus = UI.card(this, "局域网遥控服务", RemoteServerHub.statusText());
+        root.addView(remoteStatus);
+
         start.setOnClickListener(v -> startActivity(new Intent(this, ScriptListActivity.class)));
         settings.setOnClickListener(v -> startActivity(new Intent(this, AppSettingsActivity.class)));
         remote.setOnClickListener(v -> startActivity(new Intent(this, RemoteSettingsActivity.class)));
         setContentView(root);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        RemoteServerHub.ensureStarted(this);
     }
 }

@@ -27,7 +27,7 @@ import com.jlxc.teleprompter.asr.AsrEngineFactory;
 import com.jlxc.teleprompter.data.Script;
 import com.jlxc.teleprompter.data.ScriptStore;
 import com.jlxc.teleprompter.remote.RemoteCommandListener;
-import com.jlxc.teleprompter.remote.RemoteServer;
+import com.jlxc.teleprompter.remote.RemoteServerHub;
 import com.jlxc.teleprompter.settings.AppSettings;
 import com.jlxc.teleprompter.util.TextUtil;
 
@@ -41,7 +41,6 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
     private LinearLayout speedPanel;
     private long lastAutoTick;
     private boolean paused;
-    private RemoteServer remoteServer;
     private AsrEngine asrEngine;
     private ScriptAligner aligner;
 
@@ -192,9 +191,12 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
     }
 
     private void startRemoteIfNeeded() {
-        if (!settings.remoteEnabled()) return;
-        remoteServer = new RemoteServer(settings.remotePort(), this);
-        remoteServer.start();
+        if (!settings.remoteEnabled()) {
+            statusView.setText(modeName() + " · 局域网遥控服务已关闭");
+            return;
+        }
+        RemoteServerHub.ensureStarted(this);
+        RemoteServerHub.setActiveListener(this);
     }
 
     @Override public void onRemoteScroll(float dy) { scrollView.scrollBy(0, (int) dy); }
@@ -249,7 +251,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
     @Override protected void onDestroy() {
         super.onDestroy();
         handler.removeCallbacksAndMessages(null);
-        if (remoteServer != null) remoteServer.stop();
+        RemoteServerHub.clearActiveListener(this);
         if (asrEngine != null) asrEngine.stop();
     }
 }

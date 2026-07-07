@@ -8,6 +8,8 @@
         android:theme="@style/AppTheme"
         android:label="JLXC 提词器"
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true">
         <activity android:name=".ScriptEditorActivity" />
         <activity android:name=".RemoteSettingsActivity" />

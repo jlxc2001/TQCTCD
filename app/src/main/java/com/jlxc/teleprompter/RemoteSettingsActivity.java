@@ -8,6 +8,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.jlxc.teleprompter.remote.RemoteServerHub;
 import com.jlxc.teleprompter.settings.AppSettings;
 import com.jlxc.teleprompter.ui.UI;
 import com.jlxc.teleprompter.util.NetworkUtil;
@@ -21,15 +22,22 @@ public class RemoteSettingsActivity extends Activity {
         LinearLayout root = UI.vertical(this);
         UI.backBar(this, root, "遥控设置");
 
-        TextView ip = UI.card(this, "当前手机 IP：" + NetworkUtil.localIp(this), "控制端输入这个 IP；提词端默认端口 " + s.remotePort());
+        TextView ip = UI.card(this, "当前手机 IP", NetworkUtil.localIpsText(this) + "\n控制端输入同一 Wi-Fi/热点网段的 IP；提词端默认端口 " + s.remotePort());
         root.addView(ip);
+
+        TextView serviceStatus = UI.card(this, "服务状态", RemoteServerHub.statusText());
+        root.addView(serviceStatus);
 
         Switch remote = new Switch(this);
         remote.setText("进入提词页面后启用局域网遥控服务");
         remote.setTextColor(android.graphics.Color.WHITE);
         remote.setTextSize(16);
         remote.setChecked(s.remoteEnabled());
-        remote.setOnCheckedChangeListener((buttonView, isChecked) -> s.setRemoteEnabled(isChecked));
+        remote.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            s.setRemoteEnabled(isChecked);
+            RemoteServerHub.restart(this);
+            serviceStatus.setText("服务状态\n" + RemoteServerHub.statusText());
+        });
         root.addView(remote);
 
         root.addView(UI.label(this, "端口号"));
@@ -45,13 +53,20 @@ public class RemoteSettingsActivity extends Activity {
                 int p = Integer.parseInt(port.getText().toString().trim());
                 if (p < 1024 || p > 65535) throw new IllegalArgumentException();
                 s.setRemotePort(p);
-                Toast.makeText(this, "端口已保存", Toast.LENGTH_SHORT).show();
-                ip.setText("当前手机 IP：" + NetworkUtil.localIp(this) + "\n控制端输入这个 IP；提词端默认端口 " + s.remotePort());
+                RemoteServerHub.restart(this);
+                Toast.makeText(this, "端口已保存，遥控服务已重启", Toast.LENGTH_SHORT).show();
+                serviceStatus.setText("服务状态\n" + RemoteServerHub.statusText());
+                ip.setText("当前手机 IP\n" + NetworkUtil.localIpsText(this) + "\n控制端输入同一 Wi-Fi/热点网段的 IP；提词端默认端口 " + s.remotePort());
             } catch (Exception e) { Toast.makeText(this, "端口范围 1024～65535", Toast.LENGTH_SHORT).show(); }
         });
 
         TextView protocol = UI.card(this, "控制协议", "HTTP: /api/ping, /api/remote/scroll?dy=80\nUDP: SCROLL 80 / SCROLL -80\ndy>0 向上滚动继续读，dy<0 回退。蓝牙鼠标滚轮/方向键在提词页面内也可直接控制。 ");
         root.addView(protocol);
         setContentView(root);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        RemoteServerHub.ensureStarted(this);
     }
 }
