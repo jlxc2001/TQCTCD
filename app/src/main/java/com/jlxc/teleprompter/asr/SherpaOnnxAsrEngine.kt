@@ -22,7 +22,7 @@ class SherpaOnnxAsrEngine(context: Context) : AsrEngine {
     @Volatile private var audioRecord: AudioRecord? = null
     private var worker: Thread? = null
 
-    override fun name(): String = "sherpa-onnx 中文离线 ASR"
+    override fun name(): String = "sherpa-onnx 中文 xlarge 离线 ASR"
 
     override fun isAvailable(): Boolean {
         return AsrModelInfo.hasBundledModel(appContext)
@@ -66,7 +66,7 @@ class SherpaOnnxAsrEngine(context: Context) : AsrEngine {
                 tokens = AsrModelInfo.TOKENS,
                 numThreads = max(2, Runtime.getRuntime().availableProcessors() / 2),
                 provider = "cpu",
-                modelType = "zipformer"
+                modelType = "zipformer2"
             )
             val config = OnlineRecognizerConfig(
                 modelConfig = modelConfig,
@@ -93,7 +93,7 @@ class SherpaOnnxAsrEngine(context: Context) : AsrEngine {
             )
             audioRecord = record
             record.startRecording()
-            emitReady(listener, "$name · 正在听 · 支持回读上一段")
+            emitReady(listener, "$name · ${AsrModelInfo.MODEL_LABEL} · 正在听 · 支持回读上一段")
 
             val shorts = ShortArray(bufferSize / 2)
             var lastPartial = ""

@@ -1,3 +1,3 @@
-这里放本地 ASR 模型文件。
-推荐路线：sherpa-onnx streaming zipformer / streaming paraformer 中文或中英模型。
-当前工程已经把 UI、跟读匹配、回读上一段逻辑和 ASR 接口解耦，替换 com.jlxc.teleprompter.asr.SherpaOnnxAsrEngine 即可接入真实本地模型。
+This directory is populated during GitHub Actions build by scripts/download_sherpa_asr.sh.
+Default model: sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30.
+Required files: encoder.int8.onnx, decoder.onnx, joiner.int8.onnx, tokens.txt.

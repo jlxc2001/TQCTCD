@@ -7,12 +7,19 @@ android {
     namespace 'com.jlxc.teleprompter'
     compileSdk 35
 
+    androidResources {
+        noCompress += ['onnx', 'txt', 'model']
+    }
+
     defaultConfig {
         applicationId 'com.jlxc.teleprompter'
         minSdk 23
         targetSdk 35
-        versionCode 2
-        versionName '0.2.0-asr'
+        versionCode 3
+        versionName '0.3.0-xlarge-asr'
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
     }
 }
 

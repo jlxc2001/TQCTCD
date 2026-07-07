@@ -12,7 +12,7 @@
 
 ## 重要：语音识别模型
 
-源码 ZIP 不直接内置几十 MB 的 AAR 和中文 ASR 模型，避免源码包过大。
+源码 ZIP 不直接内置 AAR 和 700MB+ 的中文 xlarge ASR 模型，避免源码仓库过大。GitHub Actions 打包时会自动下载并塞进 APK。
 
 请使用 GitHub Actions 打包，工作流会自动运行：
 
@@ -23,9 +23,9 @@ bash scripts/download_sherpa_asr.sh
 该脚本会下载：
 
 1. `sherpa-onnx-static-link-onnxruntime-1.12.31.aar`
-2. `sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23` 中文流式模型
+2. `sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30` 中文 xlarge 流式大模型
 
-最终 APK 会明显大于 48KB。只有最终 APK 里包含模型后，语音识别模式才会使用真正的本地离线 ASR。
+最终 APK 会明显大于 48KB，通常会达到数百 MB 级别。只有最终 APK 里包含 xlarge 模型后，语音识别模式才会使用真正的本地离线 ASR。
 
 如果你本地打包，也需要先运行：
 
@@ -78,5 +78,13 @@ http://提词器手机IP:47230/api/remote/scroll?dy=300
 - 阈值低：允许文案临时改几个字、口误后继续识别，但误跳风险更高
 - 阈值高：更严格，误跳少，但临场改词时可能不跟随
 - 建议默认：72%
+
+## 当前 ASR 策略
+
+- 默认模型：`sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30`
+- 类型：中文流式 Transducer / xlarge / int8
+- 文件：`encoder.int8.onnx`、`decoder.onnx`、`joiner.int8.onnx`、`tokens.txt`
+- 运行方式：手机本地离线，不依赖云服务
+- ABI：默认只打包 `arm64-v8a`，更适合骁龙 8 Elite 这类旗舰设备
 
 回读上一句/上一段自动退回也会使用这个阈值。
