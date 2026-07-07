@@ -2,99 +2,81 @@
 
 这是一个 Android 原生提词器工程，包含：
 
-- 文稿列表、新建、编辑、删除
-- 黑底白字提词页面
-- 自定义背景色、文字颜色、字号
-- 镜像显示、屏幕朝向
-- 自动滚动模式
-- 语音跟读匹配与“回读上一段”算法
-- 蓝牙键盘/鼠标滚轮控制
-- 局域网 HTTP + UDP 遥控协议
-- GitHub Actions 打包配置
+- 文稿列表：新建、编辑、长按删除、点击开始提词
+- 提词显示：黑底白字，支持自定义背景色、文字颜色、字号
+- 镜像显示、屏幕朝向设置
+- 模式一：自动滚动，长按提词页面显示速度条
+- 模式二：语音识别跟读，已读句子变暗，支持回读上一段/上一句自动退回
+- 模式三：蓝牙/局域网遥控滚动
+- 遥控协议：HTTP + UDP，默认端口 47230
 
-## 重要说明：语音识别
+## 重要：语音识别模型
 
-当前工程默认没有直接内置 sherpa-onnx 中文离线模型和 `.so`，因为完整中文流式模型通常会让 APK 体积达到数百 MB。
+源码 ZIP 不直接内置几十 MB 的 AAR 和中文 ASR 模型，避免源码包过大。
 
-当前可运行的兜底方案是 Android 系统 `SpeechRecognizer`。它只适合开发调试：
+请使用 GitHub Actions 打包，工作流会自动运行：
 
-- 有些国产系统没有可用的系统语音识别服务，会提示“系统语音识别不可用”。
-- 有些系统语音识别需要联网。
-- 正式版建议接入 `sherpa-onnx` 本地流式中文模型。
-
-语音跟读、回读上一段、跳读匹配的核心逻辑已经和 ASR 引擎解耦：
-
-```text
-app/src/main/java/com/jlxc/teleprompter/align/ScriptAligner.java
+```bash
+bash scripts/download_sherpa_asr.sh
 ```
 
-后续只需要替换：
+该脚本会下载：
 
-```text
-app/src/main/java/com/jlxc/teleprompter/asr/SherpaOnnxAsrEngine.java
+1. `sherpa-onnx-static-link-onnxruntime-1.12.31.aar`
+2. `sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23` 中文流式模型
+
+最终 APK 会明显大于 48KB。只有最终 APK 里包含模型后，语音识别模式才会使用真正的本地离线 ASR。
+
+如果你本地打包，也需要先运行：
+
+```bash
+bash scripts/download_sherpa_asr.sh
 ```
 
-## 重要说明：局域网遥控
+然后再执行：
 
-修复版已经把遥控服务改成 App 级单例服务：
-
-- 打开 APP 主界面后就会启动 `/api/ping`
-- 在“遥控设置”里可以看到服务状态
-- 真正滚动控制需要进入某篇文稿的“开始提词”页面后才会生效
-- HTTP 与 UDP 都绑定到 `0.0.0.0:47230`
-
-默认端口：
-
-```text
-47230
+```bash
+gradle :app:assembleDebug --no-daemon --stacktrace
 ```
-
-连接检测：
-
-```text
-GET http://提词器手机IP:47230/api/ping
-```
-
-滚动控制：
-
-```text
-POST http://提词器手机IP:47230/api/remote/scroll?dy=80
-```
-
-UDP 高频滚动：
-
-```text
-SCROLL 80
-SCROLL -80
-```
-
-`dy > 0` 表示继续往后读，提词内容向上滚动。  
-`dy < 0` 表示回退到前文，提词内容向下滚动。
-
-## 手机互连排查
-
-如果电脑能 ping 两台手机，但控制端连接失败，按这个顺序查：
-
-1. 提词端 APP 是否已经打开。
-2. 提词端“遥控设置”里是否显示 HTTP/UDP 已启动。
-3. 控制端填写的 IP 是否是同一 Wi-Fi/热点网段的 IP。
-4. 两台手机是否连在同一个热点或同一个路由器。
-5. 手机热点是否开启了“设备隔离 / AP 隔离 / 访客网络隔离”。
-6. 端口是否一致，默认都是 47230。
-7. 在电脑浏览器打开：`http://提词器IP:47230/api/ping`，如果返回 JSON，说明提词端服务正常。
 
 ## GitHub Actions 打包
 
-工作流文件：
+上传到 GitHub 后：
+
+1. 打开仓库 Actions
+2. 选择 Android Build
+3. 点击 Run workflow
+4. 构建完成后，从 Artifacts 下载 APK
+
+## 遥控测试
+
+打开提词端 APP 后，电脑浏览器访问：
 
 ```text
-.github/workflows/android-build.yml
+http://提词器手机IP:47230/api/ping
 ```
 
-进入 GitHub 仓库：
+正常会返回：
+
+```json
+{"ok":true,"app":"JLXC Teleprompter","remote":true,"version":2,"http":true,"udp":true}
+```
+
+打开一篇文稿后，可以测试滚动：
 
 ```text
-Actions → Android Build → Run workflow
+http://提词器手机IP:47230/api/remote/scroll?dy=300
 ```
 
-打包完成后，在 Artifacts 下载 debug APK。
+`dy > 0`：继续往后滚动。  
+`dy < 0`：回退到前文。
+
+## 语音识别率设置
+
+软件设置页面中有“识别率设置”。
+
+- 阈值低：允许文案临时改几个字、口误后继续识别，但误跳风险更高
+- 阈值高：更严格，误跳少，但临场改词时可能不跟随
+- 建议默认：72%
+
+回读上一句/上一段自动退回也会使用这个阈值。

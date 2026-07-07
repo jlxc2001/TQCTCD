@@ -5,9 +5,12 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
+import android.view.ViewGroup;
 
 import com.jlxc.teleprompter.util.TextUtil;
 
@@ -73,9 +76,39 @@ public final class UI {
         return v;
     }
 
+    public static ScrollView scrollWrap(Activity a, View content) {
+        ScrollView sv = new ScrollView(a);
+        sv.setFillViewport(false);
+        sv.setBackgroundColor(BG);
+        sv.addView(content, new ScrollView.LayoutParams(-1, -2));
+        return sv;
+    }
+
+    public static ArrayAdapter<String> darkSpinnerAdapter(Activity a, String[] items) {
+        return new ArrayAdapter<String>(a, android.R.layout.simple_spinner_item, items) {
+            private TextView style(View v, boolean dropDown) {
+                TextView t = (TextView) v;
+                t.setTextColor(dropDown ? Color.BLACK : Color.WHITE);
+                t.setTextSize(16);
+                t.setBackgroundColor(dropDown ? Color.WHITE : CARD);
+                t.setPadding(TextUtil.dp(a, 12), TextUtil.dp(a, 10), TextUtil.dp(a, 12), TextUtil.dp(a, 10));
+                return t;
+            }
+
+            @Override public View getView(int position, View convertView, ViewGroup parent) {
+                return style(super.getView(position, convertView, parent), false);
+            }
+
+            @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                return style(super.getDropDownView(position, convertView, parent), true);
+            }
+        };
+    }
+
     public static void backBar(Activity a, LinearLayout root, String title) {
         TextView v = title(a, "‹  " + title);
         v.setOnClickListener(view -> a.finish());
         root.addView(v);
     }
 }
+

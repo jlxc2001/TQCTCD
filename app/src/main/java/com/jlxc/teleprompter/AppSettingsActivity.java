@@ -3,7 +3,6 @@ package com.jlxc.teleprompter;
 import android.app.Activity;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -13,6 +12,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.jlxc.teleprompter.asr.AsrModelInfo;
 import com.jlxc.teleprompter.settings.AppSettings;
 import com.jlxc.teleprompter.ui.UI;
 
@@ -64,7 +64,7 @@ public class AppSettingsActivity extends Activity {
 
         root.addView(UI.label(this, "开始提词后的屏幕朝向"));
         Spinner orientation = new Spinner(this);
-        orientation.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
+        orientation.setAdapter(UI.darkSpinnerAdapter(this,
                 new String[]{"跟随系统", "竖屏", "横屏", "反向横屏"}));
         orientation.setSelection(s.orientationMode());
         orientation.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
@@ -75,7 +75,7 @@ public class AppSettingsActivity extends Activity {
 
         root.addView(UI.label(this, "提词模式"));
         Spinner mode = new Spinner(this);
-        mode.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
+        mode.setAdapter(UI.darkSpinnerAdapter(this,
                 new String[]{"模式一：自动滚动字幕", "模式二：语音识别字幕", "模式三：遥控控制字幕"}));
         mode.setSelection(s.mode());
         mode.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
@@ -85,7 +85,10 @@ public class AppSettingsActivity extends Activity {
         root.addView(mode);
 
         root.addView(UI.label(this, "语音识别率设置"));
-        TextView thText = UI.card(this, "当前阈值：" + percent(s.voiceThreshold()), "低：允许临场改字；高：更严格，误跳少。建议 65%～78%。");
+        root.addView(UI.card(this, "内置 ASR 模型状态", AsrModelInfo.statusText(this)));
+        Button thButton = UI.button(this, "识别率设置：当前 " + percent(s.voiceThreshold()));
+        root.addView(thButton);
+        TextView thText = UI.card(this, "当前匹配阈值：" + percent(s.voiceThreshold()), "低：允许临场改字/口误；高：更严格，误跳少。建议 65%～78%。回读上一段时也使用这个阈值。 ");
         root.addView(thText);
         SeekBar th = new SeekBar(this);
         th.setMax(100);
@@ -94,14 +97,24 @@ public class AppSettingsActivity extends Activity {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 float v = Math.max(45, Math.min(95, progress)) / 100f;
                 s.setVoiceThreshold(v);
-                thText.setText("当前阈值：" + percent(v) + "\n低：允许临场改字；高：更严格，误跳少。建议 65%～78%。");
+                thButton.setText("识别率设置：当前 " + percent(v));
+                thText.setText("当前匹配阈值：" + percent(v) + "\n低：允许临场改字/口误；高：更严格，误跳少。建议 65%～78%。回读上一段时也使用这个阈值。 ");
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
         root.addView(th);
+        Button resetVoice = UI.button(this, "重置识别率为 72%");
+        resetVoice.setOnClickListener(v -> {
+            s.setVoiceThreshold(0.72f);
+            th.setProgress(72);
+            thButton.setText("识别率设置：当前 72%");
+            thText.setText("当前匹配阈值：72%\n低：允许临场改字/口误；高：更严格，误跳少。建议 65%～78%。回读上一段时也使用这个阈值。 ");
+            Toast.makeText(this, "识别率已重置", Toast.LENGTH_SHORT).show();
+        });
+        root.addView(resetVoice);
 
-        setContentView(root);
+        setContentView(UI.scrollWrap(this, root));
     }
 
     private EditText colorEdit(String label, String value, LinearLayout root) {
