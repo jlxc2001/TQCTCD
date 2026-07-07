@@ -15,8 +15,8 @@ android {
         applicationId 'com.jlxc.teleprompter'
         minSdk 23
         targetSdk 35
-        versionCode 4
-        versionName '0.3.1-xlarge-asr-jvmfix'
+        versionCode 5
+        versionName '0.3.2-xlarge-asr-deepfix'
         ndk {
             abiFilters 'arm64-v8a'
         }
@@ -32,16 +32,11 @@ android {
     }
 }
 
-repositories {
-    flatDir {
-        dirs 'libs'
-    }
-}
 
 dependencies {
     def sherpaAar = file('libs/sherpa-onnx-static-link-onnxruntime-1.12.31.aar')
     if (sherpaAar.exists()) {
-        implementation(name: 'sherpa-onnx-static-link-onnxruntime-1.12.31', ext: 'aar')
+        implementation files(sherpaAar)
     } else {
         logger.lifecycle('sherpa-onnx AAR not found yet. GitHub Actions runs scripts/download_sherpa_asr.sh before build; local builds should run it manually for real ASR runtime.')
     }
