@@ -6,7 +6,12 @@ import java.util.List;
 
 /**
  * ASR 文本与当前句附近的短句做模糊匹配。
- * 目标不是全文跳转，而是稳定判断“当前正在读哪一句”。
+ *
+ * 这一版重点解决“必须读一句停一句才会跳下一句”的问题：
+ * 1. sherpa-onnx 的 partial 结果经常是从本轮识别开头累计输出的长文本；
+ * 2. 如果只把整段 ASR 文本和单句比较，第一句会因为距离权重一直胜出；
+ * 3. 所以这里增加“连续阅读进度”判断：当 ASR 文本已经覆盖当前句，并且开始覆盖下一句时，
+ *    立即把 CURRENT 推进到下一句，不需要用户停顿。
  */
 public class SpeechTextMatcher {
     public static class FollowMatch {
@@ -42,40 +47,134 @@ public class SpeechTextMatcher {
         if (sentences == null || sentences.isEmpty()) {
             return new FollowMatch(false, 0, 0f, 0f, false, "empty script");
         }
+        int safeCurrent = Math.max(0, Math.min(currentIndex, sentences.size() - 1));
         String norm = TextUtil.normalizeForMatch(recognized);
         if (norm.isEmpty()) {
-            return new FollowMatch(false, currentIndex, 0f, 0f, false, "empty asr");
+            return new FollowMatch(false, safeCurrent, 0f, 0f, false, "empty asr");
         }
 
-        // 流式 ASR 可能给累计文本，也可能给当前片段。为了避免上一段文本长期干扰，
-        // 同时用完整文本和尾部文本匹配，选分数最高者。
-        String tail = norm;
-        int maxTail = 80;
-        if (tail.length() > maxTail) tail = tail.substring(tail.length() - maxTail);
+        // 永远保留最近一段，而不是只拿 delta。只拿 delta 会导致“连续读”时下一句匹配不到，
+        // 表现为必须停顿等 final 结果才推进。
+        String recent = norm.substring(Math.max(0, norm.length() - 120));
+        String delta = "";
         if (!lastNormalized.isEmpty() && norm.startsWith(lastNormalized) && norm.length() > lastNormalized.length()) {
-            String delta = norm.substring(lastNormalized.length());
-            if (delta.length() >= 2) tail = delta.length() > maxTail ? delta.substring(delta.length() - maxTail) : delta;
+            delta = norm.substring(lastNormalized.length());
+            if (delta.length() > 120) delta = delta.substring(delta.length() - 120);
         }
+        String tail = delta.length() >= 6 ? delta : recent;
         lastNormalized = norm;
 
-        int start = Math.max(0, currentIndex - backRange);
-        int end = Math.min(sentences.size() - 1, currentIndex + forwardRange);
+        int start = Math.max(0, safeCurrent - backRange);
+        int end = Math.min(sentences.size() - 1, safeCurrent + forwardRange);
+
+        FollowMatch sequence = findSequentialProgress(norm, recent, tail, sentences, safeCurrent, start, end, userThreshold);
+        FollowMatch local = findLocalBest(norm, recent, tail, sentences, safeCurrent, start, end, userThreshold);
+
+        // 连续阅读推进优先。比如 ASR 已经包含“第1句+第2句的一半”，就应该立刻切到第2句，
+        // 不要因为第1句完整匹配分数更高而停在第1句。
+        if (sequence.accepted && sequence.index >= safeCurrent) {
+            if (sequence.index > safeCurrent || sequence.progress > local.progress + 0.12f) return sequence;
+        }
+
+        // 回读上一句/上一段优先保留 local 的短尾匹配能力。
+        if (local.accepted && local.index < safeCurrent) return local;
+
+        if (sequence.accepted && sequence.score >= local.score - 0.08f) return sequence;
+        return local;
+    }
+
+    /**
+     * 用“全文覆盖率”判断连续阅读位置，解决不停顿时不推进的问题。
+     */
+    private FollowMatch findSequentialProgress(String full,
+                                               String recent,
+                                               String tail,
+                                               List<SentenceItem> sentences,
+                                               int currentIndex,
+                                               int start,
+                                               int end,
+                                               float userThreshold) {
+        int bestIndex = currentIndex;
+        float bestProgress = sentenceCoverage(full, sentences.get(currentIndex).normalized);
+        float bestScore = Math.max(0.1f, bestProgress);
+        String debug = "sequential";
+
+        float base = clampThreshold(userThreshold);
+        float previousRequired = Math.max(0.52f, base - 0.22f);
+        float currentRequired = Math.max(0.28f, base - 0.38f);
+
+        for (int i = currentIndex; i <= end; i++) {
+            String sentence = sentences.get(i).normalized;
+            if (sentence == null || sentence.isEmpty()) continue;
+
+            float fullCoverage = sentenceCoverage(full, sentence);
+            float recentCoverage = Math.max(sentenceCoverage(recent, sentence), sentenceCoverage(tail, sentence));
+            float progress = Math.max(fullCoverage, recentCoverage);
+
+            boolean previousSentencesCovered = true;
+            if (i > currentIndex) {
+                for (int k = currentIndex; k < i; k++) {
+                    float c = sentenceCoverage(full, sentences.get(k).normalized);
+                    if (c < previousRequired) {
+                        previousSentencesCovered = false;
+                        break;
+                    }
+                }
+            }
+
+            if (!previousSentencesCovered) continue;
+
+            // 当前句只要有进度就更新句内滚动。下一句/后续句只要开始被明显覆盖，立即推进。
+            float requiredProgress;
+            if (i == currentIndex) requiredProgress = Math.max(0.18f, currentRequired);
+            else if (i == currentIndex + 1) requiredProgress = Math.max(0.22f, currentRequired);
+            else requiredProgress = Math.max(0.45f, currentRequired + 0.12f);
+            if (progress < requiredProgress) continue;
+
+            float score = progress;
+            if (i > currentIndex) score += 0.18f; // 鼓励“已读完当前句后开始下一句”的自然推进
+            score -= Math.max(0, i - currentIndex) * 0.015f;
+            score = clamp(score);
+
+            if (i > bestIndex || score > bestScore) {
+                bestIndex = i;
+                bestProgress = progress;
+                bestScore = score;
+                debug = "sequential coverage=" + progress + ", recent=" + recent;
+            }
+        }
+
+        float required = requiredThreshold(bestIndex, currentIndex, userThreshold);
+        // 连续推进不能按普通单句匹配阈值卡太死，否则用户必须停顿。这里按进度单独放宽。
+        boolean accepted = bestIndex == currentIndex
+                ? bestProgress >= 0.12f
+                : bestScore >= Math.max(0.42f, required - 0.25f);
+        return new FollowMatch(accepted, bestIndex, bestScore, clamp(bestProgress), false, debug);
+    }
+
+    private FollowMatch findLocalBest(String norm,
+                                      String recent,
+                                      String tail,
+                                      List<SentenceItem> sentences,
+                                      int currentIndex,
+                                      int start,
+                                      int end,
+                                      float userThreshold) {
         int bestIndex = currentIndex;
         float bestScore = 0f;
         float bestProgress = 0f;
-        String bestDebug = "";
+        String bestDebug = "local";
 
         for (int i = start; i <= end; i++) {
             SentenceItem sentence = sentences.get(i);
-            CandidateScore a = scoreOne(norm, tail, sentence.normalized);
-            CandidateScore b = scoreOne(tail, tail, sentence.normalized);
-            CandidateScore c = a.score >= b.score ? a : b;
+            CandidateScore fullScore = scoreOne(norm, recent, sentence.normalized);
+            CandidateScore tailScore = scoreOne(tail, recent, sentence.normalized);
+            CandidateScore c = fullScore.score >= tailScore.score ? fullScore : tailScore;
 
-            // 如果一句话跨过当前句和下一句，允许“当前句+下一句”辅助判断，
-            // 但真正激活的索引仍然是当前候选 i。
+            // 如果一句话跨过当前句和下一句，允许“候选句+下一句”辅助判断。
             if (i + 1 < sentences.size()) {
                 String joined = sentence.normalized + sentences.get(i + 1).normalized;
-                CandidateScore joinedScore = scoreOne(norm, tail, joined);
+                CandidateScore joinedScore = scoreOne(norm, recent, joined);
                 if (joinedScore.score > c.score) {
                     c = new CandidateScore(joinedScore.score, Math.min(1f, joinedScore.progress));
                 }
@@ -83,13 +182,13 @@ public class SpeechTextMatcher {
 
             float distance = Math.abs(i - currentIndex);
             float positionWeight = 1f - Math.min(distance, 12f) / 12f;
-            float finalScore = c.score * 0.9f + positionWeight * 0.1f;
+            float finalScore = c.score * 0.88f + positionWeight * 0.12f;
 
             if (finalScore > bestScore) {
                 bestScore = finalScore;
                 bestIndex = i;
                 bestProgress = c.progress;
-                bestDebug = "range=" + start + "-" + end + ", tail=" + tail;
+                bestDebug = "local range=" + start + "-" + end + ", tail=" + tail;
             }
         }
 
@@ -108,6 +207,15 @@ public class SpeechTextMatcher {
 
     private float clampThreshold(float v) {
         return Math.max(0.35f, Math.min(0.95f, v));
+    }
+
+    /** 句子有多少比例已经出现在 ASR 文本中。更适合累计 partial。 */
+    private float sentenceCoverage(String heard, String sentence) {
+        if (heard == null || sentence == null || heard.isEmpty() || sentence.isEmpty()) return 0f;
+        if (heard.contains(sentence)) return 1f;
+        if (sentence.contains(heard)) return Math.min(1f, heard.length() / (float) Math.max(1, sentence.length()));
+        int lcs = lcsLength(heard, sentence);
+        return clamp(lcs / (float) Math.max(1, sentence.length()));
     }
 
     private CandidateScore scoreOne(String fullHeard, String tailHeard, String sentence) {

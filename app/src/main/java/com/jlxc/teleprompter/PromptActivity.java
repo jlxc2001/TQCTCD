@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,6 +13,10 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -42,6 +47,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
     private ScrollView scrollView;
     private TextView contentView;
     private TextView statusView;
+    private TextView speedTipView;
     private LinearLayout speedPanel;
     private LinearLayout sentenceContainer;
     private final List<TextView> sentenceViews = new ArrayList<>();
@@ -52,6 +58,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
     private boolean paused;
     private AsrEngine asrEngine;
     private int targetCenterScrollY = 0;
+    private String lastStatusText = "";
 
     private final Runnable autoRunnable = new Runnable() {
         @Override public void run() {
@@ -76,7 +83,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
                 scrollView.scrollTo(0, targetCenterScrollY);
                 return;
             }
-            int step = (int) (diff * 0.16f);
+            int step = (int) (diff * 0.18f);
             if (step == 0) step = diff > 0 ? 1 : -1;
             scrollView.scrollTo(0, current + step);
             handler.postDelayed(this, 16);
@@ -85,6 +92,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        enterImmersiveMode();
         settings = new AppSettings(this);
         setRequestedOrientation(settings.androidOrientation());
         String id = getIntent().getStringExtra("scriptId");
@@ -95,6 +103,38 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         startRemoteIfNeeded();
     }
 
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) enterImmersiveMode();
+    }
+
+    private void enterImmersiveMode() {
+        Window window = getWindow();
+        window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        View decor = window.getDecorView();
+        decor.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        );
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowManager.LayoutParams lp = window.getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            window.setAttributes(lp);
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false);
+            WindowInsetsController controller = decor.getWindowInsetsController();
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        }
+    }
+
     private void buildUi() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(settings.backgroundColor());
@@ -102,6 +142,8 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
         scrollView.setClipToPadding(false);
+        scrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scrollView.setVerticalScrollBarEnabled(false);
 
         if (settings.mode() == AppSettings.MODE_VOICE) {
             buildSentencePromptUi(root);
@@ -109,12 +151,10 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
             buildPlainPromptUi(root);
         }
 
+        // 提词页面默认保持干净，不再把 ASR 调试文字压在顶部；调试信息放到长按面板里。
         statusView = new TextView(this);
-        statusView.setTextColor(Color.GRAY);
-        statusView.setTextSize(13);
-        statusView.setPadding(TextUtil.dp(this, 12), TextUtil.dp(this, 8), TextUtil.dp(this, 12), TextUtil.dp(this, 8));
-        statusView.setText(modeName() + " · 长按屏幕显示速度条/状态");
-        root.addView(statusView, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+        statusView.setVisibility(View.GONE);
+        root.addView(statusView, new FrameLayout.LayoutParams(1, 1, Gravity.TOP));
 
         buildSpeedPanel(root);
 
@@ -123,6 +163,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
             return true;
         });
         setContentView(root);
+        enterImmersiveMode();
     }
 
     private void buildPlainPromptUi(FrameLayout root) {
@@ -147,7 +188,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         speechMatcher = new SpeechTextMatcher();
         sentenceContainer = new LinearLayout(this);
         sentenceContainer.setOrientation(LinearLayout.VERTICAL);
-        sentenceContainer.setPadding(TextUtil.dp(this, 32), TextUtil.dp(this, 160), TextUtil.dp(this, 32), TextUtil.dp(this, 260));
+        sentenceContainer.setPadding(TextUtil.dp(this, 32), TextUtil.dp(this, 220), TextUtil.dp(this, 32), TextUtil.dp(this, 320));
         if (settings.mirrorPrompt()) sentenceContainer.setScaleX(-1f);
 
         sentenceViews.clear();
@@ -158,9 +199,9 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
             tv.setLineSpacing(TextUtil.dp(this, 8), 1.0f);
             tv.setIncludeFontPadding(true);
             tv.setGravity(Gravity.START);
-            tv.setPadding(TextUtil.dp(this, 10), TextUtil.dp(this, 8), TextUtil.dp(this, 10), TextUtil.dp(this, 8));
+            tv.setPadding(TextUtil.dp(this, 14), TextUtil.dp(this, 10), TextUtil.dp(this, 14), TextUtil.dp(this, 10));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.setMargins(0, 0, 0, TextUtil.dp(this, 12));
+            lp.setMargins(0, 0, 0, TextUtil.dp(this, 14));
             sentenceContainer.addView(tv, lp);
             sentenceViews.add(tv);
         }
@@ -178,7 +219,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         speedPanel = new LinearLayout(this);
         speedPanel.setOrientation(LinearLayout.VERTICAL);
         speedPanel.setPadding(TextUtil.dp(this, 16), TextUtil.dp(this, 12), TextUtil.dp(this, 16), TextUtil.dp(this, 14));
-        speedPanel.setBackgroundColor(Color.argb(220, 20, 22, 26));
+        speedPanel.setBackgroundColor(Color.argb(230, 20, 22, 26));
         TextView speedLabel = new TextView(this);
         speedLabel.setTextColor(Color.WHITE);
         speedLabel.setTextSize(15);
@@ -197,17 +238,21 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
         speedPanel.addView(speed);
-        TextView tip = new TextView(this);
-        tip.setTextColor(Color.LTGRAY);
-        tip.setTextSize(12);
-        tip.setText("语音模式：已读句变暗，当前句居中，支持回读上一段。遥控协议：HTTP/UDP 端口 " + settings.remotePort() + "。 ");
-        speedPanel.addView(tip);
+        speedTipView = new TextView(this);
+        speedTipView.setTextColor(Color.LTGRAY);
+        speedTipView.setTextSize(12);
+        speedTipView.setText("语音模式：已读句变暗，当前句居中，不停顿也会按句推进；支持回读上一段。遥控协议：HTTP/UDP 端口 " + settings.remotePort() + "。 ");
+        speedPanel.addView(speedTipView);
         speedPanel.setVisibility(View.GONE);
         root.addView(speedPanel, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
     }
 
     private void toggleSpeedPanel() {
         speedPanel.setVisibility(speedPanel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+        if (speedPanel.getVisibility() == View.VISIBLE && speedTipView != null && !lastStatusText.isEmpty()) {
+            speedTipView.setText(lastStatusText);
+        }
+        enterImmersiveMode();
     }
 
     private void startMode() {
@@ -221,22 +266,26 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
                 startAsr();
             }
         } else {
-            statusView.setText("遥控模式 · 等待蓝牙遥控器或局域网控制端");
+            updateHiddenStatus("遥控模式 · 等待蓝牙遥控器或局域网控制端");
         }
     }
 
     private void startAsr() {
         asrEngine = AsrEngineFactory.create(this);
-        statusView.setText("语音识别模式 · 正在启动 " + asrEngine.name());
+        updateHiddenStatus("语音识别模式 · 正在启动 " + asrEngine.name());
         asrEngine.start(new AsrEngine.Listener() {
             @Override public void onPartialText(String text) { onRecognized(text, false); }
             @Override public void onFinalText(String text) { onRecognized(text, true); }
-            @Override public void onError(String message) { statusView.setText("语音识别：" + message); }
-            @Override public void onReady(String engineName) { statusView.setText("语音识别模式 · " + engineName + " · 按句跟读/回读"); }
+            @Override public void onError(String message) { updateHiddenStatus("语音识别：" + message); }
+            @Override public void onReady(String engineName) { updateHiddenStatus("语音识别模式 · " + engineName + " · 按句跟读/回读"); }
         });
     }
 
     private void onRecognized(String text, boolean fin) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post(() -> onRecognized(text, fin));
+            return;
+        }
         if (paused || text == null || text.trim().isEmpty()) return;
         if (settings.mode() != AppSettings.MODE_VOICE || speechMatcher == null || followState == null) return;
 
@@ -253,11 +302,14 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
             followState.moveTo(match.index, match.progress);
             applySentenceStyles();
             smoothCenterCurrentSentence(match.progress);
+        } else {
+            // 即使暂时低于阈值，也保持当前句居中，避免画面漂移。
+            smoothCenterCurrentSentence(followState.currentProgress());
         }
 
         int index = followState.currentIndex() + 1;
         int total = sentenceItems.size();
-        statusView.setText((fin ? "最终" : "实时")
+        updateHiddenStatus((fin ? "最终" : "实时")
                 + "识别 · 当前 " + index + "/" + total
                 + " · 匹配 " + (int) (match.score * 100) + "%"
                 + (match.accepted ? "" : " · 低于识别率阈值")
@@ -265,15 +317,23 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
                 + "\n" + text);
     }
 
+    private void updateHiddenStatus(String text) {
+        lastStatusText = text == null ? "" : text;
+        if (statusView != null) statusView.setText(lastStatusText);
+        if (speedPanel != null && speedPanel.getVisibility() == View.VISIBLE && speedTipView != null) {
+            speedTipView.setText(lastStatusText);
+        }
+    }
+
     private void applySentenceStyles() {
         if (sentenceItems == null || sentenceViews == null) return;
         int base = settings.textColor();
-        int highlightBg = colorWithAlpha(base, 0.10f);
+        int highlightBg = colorWithAlpha(base, 0.16f);
         for (int i = 0; i < sentenceItems.size() && i < sentenceViews.size(); i++) {
             SentenceItem item = sentenceItems.get(i);
             TextView tv = sentenceViews.get(i);
             if (item.state == SentenceItem.ReadState.READ) {
-                tv.setTextColor(colorWithAlpha(base, 0.40f));
+                tv.setTextColor(colorWithAlpha(base, 0.28f));
                 tv.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
                 tv.setBackgroundColor(Color.TRANSPARENT);
             } else if (item.state == SentenceItem.ReadState.CURRENT) {
@@ -281,7 +341,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
                 tv.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
                 tv.setBackgroundColor(highlightBg);
             } else {
-                tv.setTextColor(colorWithAlpha(base, 0.82f));
+                tv.setTextColor(colorWithAlpha(base, 0.68f));
                 tv.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
                 tv.setBackgroundColor(Color.TRANSPARENT);
             }
@@ -289,7 +349,8 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
     }
 
     private int colorWithAlpha(int color, float alpha) {
-        int a = Math.max(0, Math.min(255, (int) (255 * alpha)));
+        int original = Color.alpha(color);
+        int a = Math.max(0, Math.min(255, (int) (original * alpha)));
         return Color.argb(a, Color.red(color), Color.green(color), Color.blue(color));
     }
 
@@ -302,7 +363,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
             int childHeight = scrollView.getChildAt(0) == null ? 0 : scrollView.getChildAt(0).getHeight();
             int maxScroll = Math.max(0, childHeight - scrollView.getHeight());
             int center = currentView.getTop() + currentView.getHeight() / 2;
-            int withinSentenceOffset = (int) (currentView.getHeight() * Math.max(0f, Math.min(1f, progress)) * 0.40f);
+            int withinSentenceOffset = (int) (currentView.getHeight() * Math.max(0f, Math.min(1f, progress)) * 0.45f);
             targetCenterScrollY = Math.max(0, Math.min(maxScroll, center - scrollView.getHeight() / 2 + withinSentenceOffset));
             handler.removeCallbacks(centerScrollRunnable);
             handler.post(centerScrollRunnable);
@@ -311,7 +372,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
 
     private void startRemoteIfNeeded() {
         if (!settings.remoteEnabled()) {
-            statusView.setText(modeName() + " · 局域网遥控服务已关闭");
+            updateHiddenStatus(modeName() + " · 局域网遥控服务已关闭");
             return;
         }
         RemoteServerHub.ensureStarted(this);
@@ -321,7 +382,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
     @Override public void onRemoteScroll(float dy) { scrollView.scrollBy(0, (int) dy); }
     @Override public void onRemotePause(boolean p) {
         paused = p;
-        statusView.setText((paused ? "已暂停" : "已继续") + " · " + modeName());
+        updateHiddenStatus((paused ? "已暂停" : "已继续") + " · " + modeName());
     }
     @Override public void onRemoteTop() {
         if (settings.mode() == AppSettings.MODE_VOICE && followState != null && speechMatcher != null) {
@@ -346,7 +407,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         }
         if (keyCode == KeyEvent.KEYCODE_SPACE || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             paused = !paused;
-            statusView.setText((paused ? "已暂停" : "已继续") + " · " + modeName());
+            updateHiddenStatus((paused ? "已暂停" : "已继续") + " · " + modeName());
             return true;
         }
         return super.onKeyDown(keyCode, event);
