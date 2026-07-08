@@ -120,6 +120,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         String id = getIntent().getStringExtra("scriptId");
         script = new ScriptStore(this).get(id);
         if (script == null) { finish(); return; }
+        RemoteServerHub.setActivePrompt(script.id, script.title);
         buildUi();
         startMode();
         startRemoteIfNeeded();
@@ -526,6 +527,11 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         }
     }
 
+    @Override public void onRemoteStopPrompt() {
+        updateHiddenStatus("遥控端已关闭提词");
+        finish();
+    }
+
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
         int step = Math.max(60, (int) settings.autoSpeedPxPerSec() * 2);
         if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_DPAD_DOWN || keyCode == KeyEvent.KEYCODE_PAGE_DOWN) {
@@ -573,6 +579,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         handler.removeCallbacksAndMessages(null);
         RemoteServerHub.clearActiveListener(this);
+        RemoteServerHub.clearActivePrompt(script == null ? null : script.id);
         if (asrEngine != null) asrEngine.stop();
     }
 }

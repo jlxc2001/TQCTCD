@@ -1,9 +1,11 @@
 package com.jlxc.teleprompter.remote;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 
+import com.jlxc.teleprompter.PromptActivity;
 import com.jlxc.teleprompter.data.Script;
 import com.jlxc.teleprompter.data.ScriptStore;
 
@@ -56,9 +58,7 @@ public class RemoteServer {
         this.listener = listener;
     }
 
-    public void setListener(RemoteCommandListener listener) {
-        this.listener = listener;
-    }
+    public void setListener(RemoteCommandListener listener) { this.listener = listener; }
 
     public void start() {
         if (running) return;
@@ -130,10 +130,7 @@ public class RemoteServer {
             if (b < 0) return null;
             headerBytes.write(b);
             if (headerBytes.size() > 32768) throw new IllegalArgumentException("request header too large");
-            if ((prev3 == 13 && prev2 == 10 && prev1 == 13 && b == 10) ||
-                    (prev1 == 10 && b == 10)) {
-                break;
-            }
+            if ((prev3 == 13 && prev2 == 10 && prev1 == 13 && b == 10) || (prev1 == 10 && b == 10)) break;
             prev3 = prev2;
             prev2 = prev1;
             prev1 = b;
@@ -174,7 +171,7 @@ public class RemoteServer {
         os.write(("HTTP/1.1 " + result.code + " " + result.message + "\r\n" +
                 "Content-Type: application/json; charset=utf-8\r\n" +
                 "Access-Control-Allow-Origin: *\r\n" +
-                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" +
+                "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n" +
                 "Access-Control-Allow-Headers: *\r\n" +
                 "Content-Length: " + bytes.length + "\r\n" +
                 "Connection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
@@ -191,12 +188,8 @@ public class RemoteServer {
         if (q >= 0) { endpoint = path.substring(0, q); query = path.substring(q + 1); }
         Map<String, String> params = parseQuery(query);
 
-        if ("/".equals(endpoint) || "/api/ping".equals(endpoint)) {
-            return HttpResult.ok("{\"ok\":true,\"app\":\"JLXC Teleprompter\",\"remote\":true,\"version\":3,\"http\":" + httpReady + ",\"udp\":" + udpReady + ",\"scriptUpload\":true}");
-        }
-        if ("/api/remote/status".equals(endpoint)) {
-            return HttpResult.ok("{\"ok\":true,\"app\":\"JLXC Teleprompter\",\"port\":" + port + ",\"http\":" + httpReady + ",\"udp\":" + udpReady + ",\"scriptUpload\":true}");
-        }
+        if ("/".equals(endpoint) || "/api/ping".equals(endpoint)) return ping();
+        if ("/api/remote/status".equals(endpoint)) return status();
         if ("/api/remote/scroll".equals(endpoint)) {
             float dy = parseFloat(params.get("dy"), 0f);
             dispatchScroll(dy);
@@ -211,16 +204,104 @@ public class RemoteServer {
             dispatchTop();
             return HttpResult.ok("{\"ok\":true}");
         }
+
+        // Script management.
         if ("/api/remote/scripts".equals(endpoint)) {
             if ("GET".equals(method)) return listScripts();
             if ("POST".equals(method)) return createScript(params, headers, body);
+            if ("DELETE".equals(method)) return deleteScript(params);
             return new HttpResult(405, "Method Not Allowed", "{\"ok\":false,\"error\":\"method not allowed\"}");
         }
         if ("/api/remote/scripts/add".equals(endpoint) || "/api/remote/script/add".equals(endpoint)) {
             if (!"POST".equals(method)) return new HttpResult(405, "Method Not Allowed", "{\"ok\":false,\"error\":\"method not allowed\"}");
             return createScript(params, headers, body);
         }
+        if ("/api/remote/scripts/get".equals(endpoint) || "/api/remote/script/get".equals(endpoint)) {
+            if (!"GET".equals(method)) return new HttpResult(405, "Method Not Allowed", "{\"ok\":false,\"error\":\"method not allowed\"}");
+            return getScript(params);
+        }
+        if ("/api/remote/scripts/update".equals(endpoint) || "/api/remote/script/update".equals(endpoint)) {
+            if (!"POST".equals(method) && !"PUT".equals(method)) return new HttpResult(405, "Method Not Allowed", "{\"ok\":false,\"error\":\"method not allowed\"}");
+            return updateScript(params, headers, body);
+        }
+        if ("/api/remote/scripts/delete".equals(endpoint) || "/api/remote/script/delete".equals(endpoint)) {
+            if (!"POST".equals(method) && !"DELETE".equals(method)) return new HttpResult(405, "Method Not Allowed", "{\"ok\":false,\"error\":\"method not allowed\"}");
+            return deleteScript(params);
+        }
+
+        // Remote prompt control.
+        if ("/api/remote/prompt/status".equals(endpoint)) {
+            return promptStatus();
+        }
+        if ("/api/remote/prompt/start".equals(endpoint) || "/api/remote/start".equals(endpoint)) {
+            if (!"POST".equals(method) && !"GET".equals(method)) return new HttpResult(405, "Method Not Allowed", "{\"ok\":false,\"error\":\"method not allowed\"}");
+            return startPrompt(params, headers, body);
+        }
+        if ("/api/remote/prompt/stop".equals(endpoint) || "/api/remote/stop".equals(endpoint)) {
+            if (!"POST".equals(method) && !"GET".equals(method)) return new HttpResult(405, "Method Not Allowed", "{\"ok\":false,\"error\":\"method not allowed\"}");
+            dispatchStopPrompt();
+            return HttpResult.ok("{\"ok\":true,\"stopped\":true}");
+        }
+
         return new HttpResult(404, "Not Found", "{\"ok\":false,\"error\":\"unknown endpoint\"}");
+    }
+
+    private HttpResult ping() {
+        try {
+            JSONObject out = new JSONObject();
+            out.put("ok", true);
+            out.put("app", "JLXC Teleprompter");
+            out.put("remote", true);
+            out.put("version", 4);
+            out.put("http", httpReady);
+            out.put("udp", udpReady);
+            out.put("scriptUpload", true);
+            out.put("scriptManage", true);
+            out.put("scriptEdit", true);
+            out.put("scriptDelete", true);
+            out.put("remotePrompt", true);
+            out.put("remoteStartPrompt", true);
+            out.put("remoteStopPrompt", true);
+            out.put("activePrompt", RemoteServerHub.hasActivePrompt());
+            out.put("activeScriptId", RemoteServerHub.activeScriptId());
+            out.put("activeScriptTitle", RemoteServerHub.activeScriptTitle());
+            return HttpResult.ok(out.toString());
+        } catch (Exception e) {
+            return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
+        }
+    }
+
+    private HttpResult status() {
+        try {
+            JSONObject out = new JSONObject();
+            out.put("ok", true);
+            out.put("app", "JLXC Teleprompter");
+            out.put("port", port);
+            out.put("http", httpReady);
+            out.put("udp", udpReady);
+            out.put("scriptUpload", true);
+            out.put("scriptManage", true);
+            out.put("remotePrompt", true);
+            out.put("activePrompt", RemoteServerHub.hasActivePrompt());
+            out.put("activeScriptId", RemoteServerHub.activeScriptId());
+            out.put("activeScriptTitle", RemoteServerHub.activeScriptTitle());
+            return HttpResult.ok(out.toString());
+        } catch (Exception e) {
+            return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
+        }
+    }
+
+    private HttpResult promptStatus() {
+        try {
+            JSONObject out = new JSONObject();
+            out.put("ok", true);
+            out.put("active", RemoteServerHub.hasActivePrompt());
+            out.put("scriptId", RemoteServerHub.activeScriptId());
+            out.put("title", RemoteServerHub.activeScriptTitle());
+            return HttpResult.ok(out.toString());
+        } catch (Exception e) {
+            return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
+        }
     }
 
     private HttpResult listScripts() {
@@ -229,18 +310,33 @@ public class RemoteServer {
             List<Script> scripts = scriptStore.all();
             JSONArray arr = new JSONArray();
             for (Script s : scripts) {
-                JSONObject o = new JSONObject();
-                o.put("id", s.id);
-                o.put("title", s.title);
-                o.put("length", s.content == null ? 0 : s.content.length());
-                o.put("createdAt", s.createdAt);
-                o.put("updatedAt", s.updatedAt);
+                JSONObject o = scriptSummaryJson(s);
+                o.put("active", s.id != null && s.id.equals(RemoteServerHub.activeScriptId()));
                 arr.put(o);
             }
             JSONObject out = new JSONObject();
             out.put("ok", true);
             out.put("count", scripts.size());
             out.put("scripts", arr);
+            out.put("activePrompt", RemoteServerHub.hasActivePrompt());
+            out.put("activeScriptId", RemoteServerHub.activeScriptId());
+            return HttpResult.ok(out.toString());
+        } catch (Exception e) {
+            return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
+        }
+    }
+
+    private HttpResult getScript(Map<String, String> params) {
+        if (scriptStore == null) return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"script store unavailable\"}");
+        try {
+            String id = firstNonEmpty(params.get("id"), params.get("scriptId"));
+            if (id.isEmpty()) return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"id is required\"}");
+            Script s = scriptStore.get(id);
+            if (s == null) return new HttpResult(404, "Not Found", "{\"ok\":false,\"error\":\"script not found\"}");
+            JSONObject out = scriptSummaryJson(s);
+            out.put("ok", true);
+            out.put("content", s.content == null ? "" : s.content);
+            out.put("active", id.equals(RemoteServerHub.activeScriptId()));
             return HttpResult.ok(out.toString());
         } catch (Exception e) {
             return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
@@ -250,40 +346,131 @@ public class RemoteServer {
     private HttpResult createScript(Map<String, String> queryParams, Map<String, String> headers, String body) {
         if (scriptStore == null) return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"script store unavailable\"}");
         try {
-            Map<String, String> fields = new HashMap<>(queryParams);
-            String contentType = headers.getOrDefault("content-type", "").toLowerCase(Locale.US);
-            if (contentType.contains("application/json")) {
-                JSONObject o = new JSONObject(body == null ? "{}" : body);
-                if (o.has("title")) fields.put("title", o.optString("title", ""));
-                if (o.has("content")) fields.put("content", o.optString("content", ""));
-                if (o.has("text")) fields.put("content", o.optString("text", ""));
-            } else if (contentType.contains("application/x-www-form-urlencoded")) {
-                fields.putAll(parseQuery(body));
-            } else {
-                // text/plain: title can be in query string; body is the script content.
-                if (body != null && !body.isEmpty() && !fields.containsKey("content")) fields.put("content", body);
-            }
-
+            Map<String, String> fields = readScriptFields(queryParams, headers, body);
             String title = firstNonEmpty(fields.get("title"), fields.get("name"), fields.get("filename"));
             String content = firstNonEmpty(fields.get("content"), fields.get("text"), "");
-            if (content == null || content.trim().isEmpty()) {
-                return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"content is empty\"}");
-            }
-            if (content.getBytes(StandardCharsets.UTF_8).length > MAX_UPLOAD_BYTES) {
-                return new HttpResult(413, "Payload Too Large", "{\"ok\":false,\"error\":\"script too large\"}");
-            }
+            HttpResult check = validateContent(content);
+            if (check != null) return check;
             Script created = scriptStore.create(title, content);
-            JSONObject out = new JSONObject();
+            JSONObject out = scriptSummaryJson(created);
             out.put("ok", true);
-            out.put("id", created.id);
-            out.put("title", created.title);
-            out.put("length", created.content == null ? 0 : created.content.length());
-            out.put("createdAt", created.createdAt);
-            out.put("updatedAt", created.updatedAt);
             return HttpResult.ok(out.toString());
         } catch (Exception e) {
             return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
         }
+    }
+
+    private HttpResult updateScript(Map<String, String> queryParams, Map<String, String> headers, String body) {
+        if (scriptStore == null) return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"script store unavailable\"}");
+        try {
+            Map<String, String> fields = readScriptFields(queryParams, headers, body);
+            String id = firstNonEmpty(fields.get("id"), fields.get("scriptId"));
+            if (id.isEmpty()) return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"id is required\"}");
+            Script old = scriptStore.get(id);
+            if (old == null) return new HttpResult(404, "Not Found", "{\"ok\":false,\"error\":\"script not found\"}");
+            String title = fields.containsKey("title") ? fields.get("title") : old.title;
+            String content = firstNonEmpty(fields.get("content"), fields.get("text"), old.content);
+            HttpResult check = validateContent(content);
+            if (check != null) return check;
+            scriptStore.update(id, title, content);
+            Script updated = scriptStore.get(id);
+            if (id.equals(RemoteServerHub.activeScriptId())) {
+                RemoteServerHub.setActivePrompt(id, updated == null ? title : updated.title);
+            }
+            JSONObject out = scriptSummaryJson(updated == null ? old : updated);
+            out.put("ok", true);
+            out.put("updated", true);
+            return HttpResult.ok(out.toString());
+        } catch (Exception e) {
+            return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
+        }
+    }
+
+    private HttpResult deleteScript(Map<String, String> params) {
+        if (scriptStore == null) return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"script store unavailable\"}");
+        try {
+            String id = firstNonEmpty(params.get("id"), params.get("scriptId"));
+            if (id.isEmpty()) return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"id is required\"}");
+            Script old = scriptStore.get(id);
+            if (old == null) return new HttpResult(404, "Not Found", "{\"ok\":false,\"error\":\"script not found\"}");
+            scriptStore.delete(id);
+            boolean wasActive = id.equals(RemoteServerHub.activeScriptId());
+            if (wasActive) {
+                dispatchStopPrompt();
+                RemoteServerHub.clearActivePrompt(id);
+            }
+            JSONObject out = new JSONObject();
+            out.put("ok", true);
+            out.put("deleted", true);
+            out.put("id", id);
+            out.put("title", old.title);
+            out.put("wasActive", wasActive);
+            return HttpResult.ok(out.toString());
+        } catch (Exception e) {
+            return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
+        }
+    }
+
+    private HttpResult startPrompt(Map<String, String> params, Map<String, String> headers, String body) {
+        if (scriptStore == null || appContext == null) return new HttpResult(500, "Server Error", "{\"ok\":false,\"error\":\"remote start unavailable\"}");
+        try {
+            Map<String, String> fields = readScriptFields(params, headers, body);
+            String id = firstNonEmpty(fields.get("id"), fields.get("scriptId"));
+            if (id.isEmpty()) return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"id is required\"}");
+            Script s = scriptStore.get(id);
+            if (s == null) return new HttpResult(404, "Not Found", "{\"ok\":false,\"error\":\"script not found\"}");
+            dispatchStopPrompt();
+            main.postDelayed(() -> {
+                Intent intent = new Intent(appContext, PromptActivity.class);
+                intent.putExtra("scriptId", s.id);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                appContext.startActivity(intent);
+                RemoteServerHub.setActivePrompt(s.id, s.title);
+            }, 80);
+            JSONObject out = scriptSummaryJson(s);
+            out.put("ok", true);
+            out.put("started", true);
+            return HttpResult.ok(out.toString());
+        } catch (Exception e) {
+            return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"" + jsonEscape(e.getMessage()) + "\"}");
+        }
+    }
+
+    private Map<String, String> readScriptFields(Map<String, String> queryParams, Map<String, String> headers, String body) throws Exception {
+        Map<String, String> fields = new HashMap<>(queryParams);
+        String contentType = headers.getOrDefault("content-type", "").toLowerCase(Locale.US);
+        if (contentType.contains("application/json") && body != null && !body.trim().isEmpty()) {
+            JSONObject o = new JSONObject(body);
+            if (o.has("id")) fields.put("id", o.optString("id", ""));
+            if (o.has("scriptId")) fields.put("scriptId", o.optString("scriptId", ""));
+            if (o.has("title")) fields.put("title", o.optString("title", ""));
+            if (o.has("name")) fields.put("name", o.optString("name", ""));
+            if (o.has("filename")) fields.put("filename", o.optString("filename", ""));
+            if (o.has("content")) fields.put("content", o.optString("content", ""));
+            if (o.has("text")) fields.put("text", o.optString("text", ""));
+        } else if (contentType.contains("application/x-www-form-urlencoded")) {
+            fields.putAll(parseQuery(body));
+        } else {
+            // text/plain: id/title can be in query string; body is the script content.
+            if (body != null && !body.isEmpty() && !fields.containsKey("content")) fields.put("content", body);
+        }
+        return fields;
+    }
+
+    private HttpResult validateContent(String content) {
+        if (content == null || content.trim().isEmpty()) return new HttpResult(400, "Bad Request", "{\"ok\":false,\"error\":\"content is empty\"}");
+        if (content.getBytes(StandardCharsets.UTF_8).length > MAX_UPLOAD_BYTES) return new HttpResult(413, "Payload Too Large", "{\"ok\":false,\"error\":\"script too large\"}");
+        return null;
+    }
+
+    private JSONObject scriptSummaryJson(Script s) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("id", s == null ? "" : s.id);
+        o.put("title", s == null ? "" : s.title);
+        o.put("length", s == null || s.content == null ? 0 : s.content.length());
+        o.put("createdAt", s == null ? 0 : s.createdAt);
+        o.put("updatedAt", s == null ? 0 : s.updatedAt);
+        return o;
     }
 
     private void startUdp() {
@@ -318,12 +505,15 @@ public class RemoteServer {
             if (p.length >= 2) dispatchPause(Boolean.parseBoolean(p[1]));
         } else if ("TOP".equals(cmd)) {
             dispatchTop();
+        } else if ("STOP".equals(cmd) || "CLOSE".equals(cmd)) {
+            dispatchStopPrompt();
         }
     }
 
     private void dispatchScroll(float dy) { main.post(() -> { RemoteCommandListener l = listener; if (l != null) l.onRemoteScroll(dy); }); }
     private void dispatchPause(boolean paused) { main.post(() -> { RemoteCommandListener l = listener; if (l != null) l.onRemotePause(paused); }); }
     private void dispatchTop() { main.post(() -> { RemoteCommandListener l = listener; if (l != null) l.onRemoteTop(); }); }
+    private void dispatchStopPrompt() { main.post(() -> { RemoteCommandListener l = listener; if (l != null) l.onRemoteStopPrompt(); }); }
 
     private float parseFloat(String s, float def) { try { return Float.parseFloat(s); } catch (Exception e) { return def; } }
 
@@ -333,11 +523,8 @@ public class RemoteServer {
         for (String kv : q.split("&")) {
             int eq = kv.indexOf('=');
             try {
-                if (eq >= 0) {
-                    m.put(URLDecoder.decode(kv.substring(0, eq), "UTF-8"), URLDecoder.decode(kv.substring(eq + 1), "UTF-8"));
-                } else if (!kv.isEmpty()) {
-                    m.put(URLDecoder.decode(kv, "UTF-8"), "");
-                }
+                if (eq >= 0) m.put(URLDecoder.decode(kv.substring(0, eq), "UTF-8"), URLDecoder.decode(kv.substring(eq + 1), "UTF-8"));
+                else if (!kv.isEmpty()) m.put(URLDecoder.decode(kv, "UTF-8"), "");
             } catch (Exception ignored) {}
         }
         return m;
@@ -353,7 +540,6 @@ public class RemoteServer {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
-
 
     private static class HttpRequest {
         final String method;

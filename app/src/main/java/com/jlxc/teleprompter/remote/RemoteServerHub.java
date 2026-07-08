@@ -8,6 +8,8 @@ public final class RemoteServerHub {
     private static RemoteServer server;
     private static int port = -1;
     private static RemoteCommandListener activeListener;
+    private static String activeScriptId = "";
+    private static String activeScriptTitle = "";
 
     private RemoteServerHub() {}
 
@@ -34,6 +36,10 @@ public final class RemoteServerHub {
                 RemoteCommandListener l = activeListener;
                 if (l != null) l.onRemoteTop();
             }
+            @Override public void onRemoteStopPrompt() {
+                RemoteCommandListener l = activeListener;
+                if (l != null) l.onRemoteStopPrompt();
+            }
         });
         server.start();
     }
@@ -45,6 +51,22 @@ public final class RemoteServerHub {
     public static synchronized void clearActiveListener(RemoteCommandListener listener) {
         if (activeListener == listener) activeListener = null;
     }
+
+    public static synchronized void setActivePrompt(String scriptId, String title) {
+        activeScriptId = scriptId == null ? "" : scriptId;
+        activeScriptTitle = title == null ? "" : title;
+    }
+
+    public static synchronized void clearActivePrompt(String scriptId) {
+        if (scriptId == null || scriptId.equals(activeScriptId)) {
+            activeScriptId = "";
+            activeScriptTitle = "";
+        }
+    }
+
+    public static synchronized String activeScriptId() { return activeScriptId == null ? "" : activeScriptId; }
+    public static synchronized String activeScriptTitle() { return activeScriptTitle == null ? "" : activeScriptTitle; }
+    public static synchronized boolean hasActivePrompt() { return activeScriptId != null && !activeScriptId.isEmpty(); }
 
     public static synchronized void restart(Context context) {
         stop();

@@ -78,3 +78,7 @@ http://提词器IP:47230/api/remote/scripts
 - 单篇远程上传上限：2MB UTF-8 文本。
 - UDP 仍只用于高频滚动，不用于上传文稿。
 - 遥控端必须和提词端处于同一 Wi-Fi/热点局域网。
+
+
+---
+新版已加入远程编辑、删除、开始提词、关闭提词。详见 REMOTE_SCRIPT_MANAGE_PROTOCOL.md 和 REMOTE_CONTROLLER_SCRIPT_MANAGE_PROMPT.md。

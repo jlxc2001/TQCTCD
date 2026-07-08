@@ -189,3 +189,7 @@ ScriptSendActivity：
 8. 原有遥控滚动功能仍然正常。
 
 请输出完整修改后的控制端 Android 工程代码，不要只给片段。
+
+
+---
+新版已加入远程编辑、删除、开始提词、关闭提词。详见 REMOTE_SCRIPT_MANAGE_PROTOCOL.md 和 REMOTE_CONTROLLER_SCRIPT_MANAGE_PROMPT.md。
