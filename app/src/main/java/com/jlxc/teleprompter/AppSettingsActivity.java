@@ -186,6 +186,55 @@ public class AppSettingsActivity extends Activity {
         });
         root.addView(lead);
 
+        root.addView(UI.label(this, "回读与跳读范围"));
+        TextView backText = UI.card(this,
+                "当前：允许回读 " + s.voiceBacktrackSentences() + " 句",
+                "读错后重新读前文时，最多允许自动退回多少句。数值越大越灵活，但相似短句多时更容易误回跳；如果想完全禁止自动回读，可以设为 0。 ");
+        root.addView(backText);
+        SeekBar back = new SeekBar(this);
+        back.setMax(20);
+        back.setProgress(s.voiceBacktrackSentences());
+        back.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int v = Math.max(0, Math.min(20, progress));
+                s.setVoiceBacktrackSentences(v);
+                backText.setText("当前：允许回读 " + v + " 句\n读错后重新读前文时，最多允许自动退回多少句。数值越大越灵活，但相似短句多时更容易误回跳；如果想完全禁止自动回读，可以设为 0。 ");
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        root.addView(back);
+
+        TextView jumpText = UI.card(this,
+                "当前：允许跳读 " + s.voiceForwardJumpSentences() + " 句",
+                "跳过几句继续读时，最多允许自动向后追踪多少句。设为 1 时基本只允许自然读到下一句；数值越大越适合跳读，但远距离跳转会更严格。 ");
+        root.addView(jumpText);
+        SeekBar jump = new SeekBar(this);
+        jump.setMax(39); // 显示范围 1～40
+        jump.setProgress(Math.max(0, Math.min(39, s.voiceForwardJumpSentences() - 1)));
+        jump.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int v = Math.max(1, Math.min(40, progress + 1));
+                s.setVoiceForwardJumpSentences(v);
+                jumpText.setText("当前：允许跳读 " + v + " 句\n跳过几句继续读时，最多允许自动向后追踪多少句。设为 1 时基本只允许自然读到下一句；数值越大越适合跳读，但远距离跳转会更严格。 ");
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        root.addView(jump);
+
+        Button resetFollowRange = UI.button(this, "重置回读/跳读范围：3 / 12 句");
+        resetFollowRange.setOnClickListener(v -> {
+            s.setVoiceBacktrackSentences(3);
+            s.setVoiceForwardJumpSentences(12);
+            back.setProgress(3);
+            jump.setProgress(11);
+            backText.setText("当前：允许回读 3 句\n读错后重新读前文时，最多允许自动退回多少句。数值越大越灵活，但相似短句多时更容易误回跳；如果想完全禁止自动回读，可以设为 0。 ");
+            jumpText.setText("当前：允许跳读 12 句\n跳过几句继续读时，最多允许自动向后追踪多少句。设为 1 时基本只允许自然读到下一句；数值越大越适合跳读，但远距离跳转会更严格。 ");
+            Toast.makeText(this, "回读/跳读范围已重置", Toast.LENGTH_SHORT).show();
+        });
+        root.addView(resetFollowRange);
+
         setContentView(UI.scrollWrap(this, root));
         startMeterIfPermitted();
     }

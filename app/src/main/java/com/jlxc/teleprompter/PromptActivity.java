@@ -113,6 +113,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        keepScreenAwake();
         enterImmersiveMode();
         settings = new AppSettings(this);
         setRequestedOrientation(settings.androidOrientation());
@@ -124,9 +125,19 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
         startRemoteIfNeeded();
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        keepScreenAwake();
+        enterImmersiveMode();
+    }
+
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) enterImmersiveMode();
+    }
+
+    private void keepScreenAwake() {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     private void enterImmersiveMode() {
@@ -393,8 +404,8 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
                 text,
                 sentenceItems,
                 followState.currentIndex(),
-                5,
-                12,
+                settings.voiceBacktrackSentences(),
+                settings.voiceForwardJumpSentences(),
                 settings.voiceThreshold()
         );
 
@@ -414,6 +425,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
                 + "识别 · 逻辑 " + index + "/" + total
                 + " · 高亮 " + visual + "/" + total
                 + " · 匹配 " + (int) (match.score * 100) + "%"
+                + " · 回读/跳读 " + settings.voiceBacktrackSentences() + "/" + settings.voiceForwardJumpSentences()
                 + (match.accepted ? "" : " · 低于识别率阈值")
                 + (match.backtracked ? " · 已确认回读上一段" : "")
                 + "\n" + text);
@@ -558,6 +570,7 @@ public class PromptActivity extends Activity implements RemoteCommandListener {
 
     @Override protected void onDestroy() {
         super.onDestroy();
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         handler.removeCallbacksAndMessages(null);
         RemoteServerHub.clearActiveListener(this);
         if (asrEngine != null) asrEngine.stop();

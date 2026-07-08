@@ -64,6 +64,20 @@ public class AppSettings {
     public int voiceDisplayLeadSentences() { return sp.getInt("voice_display_lead", 1); }
     public void setVoiceDisplayLeadSentences(int v) { sp.edit().putInt("voice_display_lead", Math.max(0, Math.min(2, v))).apply(); }
 
+    /**
+     * 允许语音跟读向前回读的句数。0 表示禁止自动回读，默认 3 句。
+     * 数值越大越容易追回前文，但也更容易被相似短句误触发，因此限制在 0～20。
+     */
+    public int voiceBacktrackSentences() { return sp.getInt("voice_backtrack_sentences", 3); }
+    public void setVoiceBacktrackSentences(int v) { sp.edit().putInt("voice_backtrack_sentences", Math.max(0, Math.min(20, v))).apply(); }
+
+    /**
+     * 允许语音跟读向后跳读的句数。1 表示只允许自然推进到下一句，默认 12 句。
+     * 数值越大越适合跳过内容，但远距离跳转会自动提高匹配阈值。
+     */
+    public int voiceForwardJumpSentences() { return sp.getInt("voice_forward_jump_sentences", 12); }
+    public void setVoiceForwardJumpSentences(int v) { sp.edit().putInt("voice_forward_jump_sentences", Math.max(1, Math.min(40, v))).apply(); }
+
     public int remotePort() { return sp.getInt("remote_port", 47230); }
     public void setRemotePort(int port) { sp.edit().putInt("remote_port", port).apply(); }
 

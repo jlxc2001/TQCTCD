@@ -68,11 +68,13 @@ public class SpeechTextMatcher {
         String tail = delta.length() >= 6 ? delta : recent;
         lastNormalized = norm;
 
-        int start = Math.max(0, safeCurrent - backRange);
-        int end = Math.min(sentences.size() - 1, safeCurrent + forwardRange);
+        int safeBackRange = Math.max(0, backRange);
+        int safeForwardRange = Math.max(1, forwardRange);
+        int start = Math.max(0, safeCurrent - safeBackRange);
+        int end = Math.min(sentences.size() - 1, safeCurrent + safeForwardRange);
 
-        FollowMatch sequence = findSequentialProgress(norm, recent, tail, sentences, safeCurrent, start, end, userThreshold);
-        FollowMatch local = findLocalBest(norm, recent, tail, sentences, safeCurrent, start, end, userThreshold);
+        FollowMatch sequence = findSequentialProgress(norm, recent, tail, sentences, safeCurrent, start, end, safeBackRange, safeForwardRange, userThreshold);
+        FollowMatch local = findLocalBest(norm, recent, tail, sentences, safeCurrent, start, end, safeBackRange, safeForwardRange, userThreshold);
 
         FollowMatch backtrack = null;
         if (local.accepted && local.index < safeCurrent) {
@@ -112,6 +114,8 @@ public class SpeechTextMatcher {
                                                int currentIndex,
                                                int start,
                                                int end,
+                                               int backRange,
+                                               int forwardRange,
                                                float userThreshold) {
         int bestIndex = currentIndex;
         float bestProgress = sentenceCoverage(full, sentences.get(currentIndex).normalized);
@@ -163,7 +167,7 @@ public class SpeechTextMatcher {
             }
         }
 
-        float required = requiredThreshold(bestIndex, currentIndex, userThreshold);
+        float required = requiredThreshold(bestIndex, currentIndex, userThreshold, backRange, forwardRange);
         // 连续推进不能按普通单句匹配阈值卡太死，否则用户必须停顿。这里按进度单独放宽。
         boolean accepted = bestIndex == currentIndex
                 ? bestProgress >= 0.12f
@@ -178,6 +182,8 @@ public class SpeechTextMatcher {
                                       int currentIndex,
                                       int start,
                                       int end,
+                                      int backRange,
+                                      int forwardRange,
                                       float userThreshold) {
         int bestIndex = currentIndex;
         float bestScore = 0f;
@@ -200,7 +206,8 @@ public class SpeechTextMatcher {
             }
 
             float distance = Math.abs(i - currentIndex);
-            float positionWeight = 1f - Math.min(distance, 12f) / 12f;
+            float maxDistance = Math.max(1f, Math.max(backRange, forwardRange));
+            float positionWeight = 1f - Math.min(distance, maxDistance) / maxDistance;
             float finalScore = c.score * 0.88f + positionWeight * 0.12f;
 
             if (finalScore > bestScore) {
@@ -211,7 +218,7 @@ public class SpeechTextMatcher {
             }
         }
 
-        float required = requiredThreshold(bestIndex, currentIndex, userThreshold);
+        float required = requiredThreshold(bestIndex, currentIndex, userThreshold, backRange, forwardRange);
         boolean backtracked = bestIndex < currentIndex;
         if (backtracked) {
             // 回读是重要功能，但不能因为一句短句的模糊匹配就立刻回跳。
@@ -249,10 +256,15 @@ public class SpeechTextMatcher {
         pendingBacktrackHits = 0;
     }
 
-    private float requiredThreshold(int index, int currentIndex, float base) {
+    private float requiredThreshold(int index, int currentIndex, float base, int backRange, int forwardRange) {
         if (index == currentIndex || index == currentIndex + 1) return clampThreshold(base - 0.05f);
-        if (index < currentIndex && currentIndex - index <= 5) return clampThreshold(base);
-        if (index > currentIndex + 3) return clampThreshold(base + 0.08f);
+        if (index < currentIndex) {
+            int distance = currentIndex - index;
+            // 用户允许的回读范围内使用基础阈值；越远越严格。
+            if (distance <= Math.max(1, backRange)) return clampThreshold(base + Math.max(0, distance - 3) * 0.02f);
+            return clampThreshold(base + 0.18f);
+        }
+        if (index > currentIndex + Math.min(3, Math.max(1, forwardRange))) return clampThreshold(base + 0.08f);
         return clampThreshold(base + 0.03f);
     }
 
