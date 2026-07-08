@@ -21,7 +21,7 @@ public final class RemoteServerHub {
         if (server != null && port == wantedPort && server.isRunning()) return;
         stop();
         port = wantedPort;
-        server = new RemoteServer(port, new RemoteCommandListener() {
+        server = new RemoteServer(context.getApplicationContext(), port, new RemoteCommandListener() {
             @Override public void onRemoteScroll(float dy) {
                 RemoteCommandListener l = activeListener;
                 if (l != null) l.onRemoteScroll(dy);

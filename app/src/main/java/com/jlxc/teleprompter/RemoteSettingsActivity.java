@@ -61,7 +61,7 @@ public class RemoteSettingsActivity extends Activity {
             } catch (Exception e) { Toast.makeText(this, "端口范围 1024～65535", Toast.LENGTH_SHORT).show(); }
         });
 
-        TextView protocol = UI.card(this, "控制协议", "HTTP: /api/ping, /api/remote/scroll?dy=80\nUDP: SCROLL 80 / SCROLL -80\ndy>0 向上滚动继续读，dy<0 回退。蓝牙鼠标滚轮/方向键在提词页面内也可直接控制。 ");
+        TextView protocol = UI.card(this, "控制协议", "HTTP: /api/ping, /api/remote/scroll?dy=80\nUDP: SCROLL 80 / SCROLL -80\ndy>0 向上滚动继续读，dy<0 回退。\n远程新增文稿：POST /api/remote/scripts/add，JSON={title, content}。\n文稿列表：GET /api/remote/scripts。蓝牙鼠标滚轮/方向键在提词页面内也可直接控制。 ");
         root.addView(protocol);
         setContentView(UI.scrollWrap(this, root));
     }
