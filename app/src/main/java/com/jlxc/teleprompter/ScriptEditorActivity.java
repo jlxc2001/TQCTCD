@@ -19,6 +19,7 @@ public class ScriptEditorActivity extends Activity {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        UI.hideStatusBar(this);
         store = new ScriptStore(this);
         scriptId = getIntent().getStringExtra("scriptId");
         LinearLayout root = UI.vertical(this);
@@ -65,4 +66,10 @@ public class ScriptEditorActivity extends Activity {
         Toast.makeText(this, "已保存", Toast.LENGTH_SHORT).show();
         finish();
     }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) UI.hideStatusBar(this);
+    }
+
 }

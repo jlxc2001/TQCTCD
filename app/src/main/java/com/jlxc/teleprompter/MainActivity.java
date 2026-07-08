@@ -13,6 +13,7 @@ import com.jlxc.teleprompter.ui.UI;
 public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        UI.hideStatusBar(this);
         RemoteServerHub.ensureStarted(this);
         LinearLayout root = UI.vertical(this);
         TextView title = UI.title(this, "JLXC 提词器");
@@ -38,4 +39,10 @@ public class MainActivity extends Activity {
         super.onResume();
         RemoteServerHub.ensureStarted(this);
     }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) UI.hideStatusBar(this);
+    }
+
 }

@@ -18,6 +18,7 @@ public class RemoteSettingsActivity extends Activity {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        UI.hideStatusBar(this);
         s = new AppSettings(this);
         LinearLayout root = UI.vertical(this);
         UI.backBar(this, root, "遥控设置");
@@ -69,4 +70,10 @@ public class RemoteSettingsActivity extends Activity {
         super.onResume();
         RemoteServerHub.ensureStarted(this);
     }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) UI.hideStatusBar(this);
+    }
+
 }

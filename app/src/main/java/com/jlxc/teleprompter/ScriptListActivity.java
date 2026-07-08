@@ -26,6 +26,7 @@ public class ScriptListActivity extends Activity {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        UI.hideStatusBar(this);
         RemoteServerHub.ensureStarted(this);
         store = new ScriptStore(this);
         LinearLayout root = UI.vertical(this);
@@ -91,4 +92,10 @@ public class ScriptListActivity extends Activity {
             list.addView(card);
         }
     }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) UI.hideStatusBar(this);
+    }
+
 }

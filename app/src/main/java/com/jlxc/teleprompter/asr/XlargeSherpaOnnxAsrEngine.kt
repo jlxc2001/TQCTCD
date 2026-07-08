@@ -13,6 +13,7 @@ import com.k2fsa.sherpa.onnx.OnlineModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
+import com.jlxc.teleprompter.settings.AppSettings
 import kotlin.math.max
 
 class XlargeSherpaOnnxAsrEngine(context: Context) : AsrEngine {
@@ -96,12 +97,17 @@ class XlargeSherpaOnnxAsrEngine(context: Context) : AsrEngine {
             emitReady(listener, "${name()} · ${AsrModelInfo.MODEL_LABEL} · 正在听 · 支持回读上一段")
 
             val shorts = ShortArray(bufferSize / 2)
+            val settings = AppSettings(appContext)
             var lastPartial = ""
             while (running) {
                 val n = record.read(shorts, 0, shorts.size)
                 if (n <= 0) continue
+                val gain = settings.voiceInputGain()
                 val samples = FloatArray(n)
-                for (i in 0 until n) samples[i] = shorts[i] / 32768.0f
+                for (i in 0 until n) {
+                    val gained = shorts[i] / 32768.0f * gain
+                    samples[i] = gained.coerceIn(-1.0f, 1.0f)
+                }
                 stream.acceptWaveform(samples, sampleRate)
                 while (running && recognizer.isReady(stream)) {
                     recognizer.decode(stream)

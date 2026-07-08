@@ -4,6 +4,11 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.Gravity;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
+import android.os.Build;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -103,6 +108,24 @@ public final class UI {
                 return style(super.getDropDownView(position, convertView, parent), true);
             }
         };
+    }
+
+
+    public static void hideStatusBar(Activity a) {
+        Window window = a.getWindow();
+        window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        View decor = window.getDecorView();
+        decor.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        );
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = decor.getWindowInsetsController();
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars());
+            }
+        }
     }
 
     public static void backBar(Activity a, LinearLayout root, String title) {

@@ -33,9 +33,13 @@ public class SpeechTextMatcher {
     }
 
     private String lastNormalized = "";
+    private int pendingBacktrackIndex = -1;
+    private int pendingBacktrackHits = 0;
 
     public void reset() {
         lastNormalized = "";
+        pendingBacktrackIndex = -1;
+        pendingBacktrackHits = 0;
     }
 
     public FollowMatch findBestMatch(String recognized,
@@ -70,16 +74,31 @@ public class SpeechTextMatcher {
         FollowMatch sequence = findSequentialProgress(norm, recent, tail, sentences, safeCurrent, start, end, userThreshold);
         FollowMatch local = findLocalBest(norm, recent, tail, sentences, safeCurrent, start, end, userThreshold);
 
+        FollowMatch backtrack = null;
+        if (local.accepted && local.index < safeCurrent) {
+            backtrack = stabilizeBacktrack(local, safeCurrent, userThreshold);
+        } else {
+            clearPendingBacktrack();
+        }
+
         // 连续阅读推进优先。比如 ASR 已经包含“第1句+第2句的一半”，就应该立刻切到第2句，
         // 不要因为第1句完整匹配分数更高而停在第1句。
         if (sequence.accepted && sequence.index >= safeCurrent) {
+            clearPendingBacktrack();
             if (sequence.index > safeCurrent || sequence.progress > local.progress + 0.12f) return sequence;
         }
 
-        // 回读上一句/上一段优先保留 local 的短尾匹配能力。
-        if (local.accepted && local.index < safeCurrent) return local;
+        // 回读上一句/上一段必须经过“强匹配或连续两次命中”确认，避免 ASR 偶发错字导致字幕上下抖。
+        if (backtrack != null) {
+            if (backtrack.accepted) return backtrack;
+            if (!sequence.accepted) return backtrack;
+        }
 
-        if (sequence.accepted && sequence.score >= local.score - 0.08f) return sequence;
+        if (sequence.accepted && sequence.score >= local.score - 0.08f) {
+            clearPendingBacktrack();
+            return sequence;
+        }
+        if (local.accepted && local.index >= safeCurrent) clearPendingBacktrack();
         return local;
     }
 
@@ -193,9 +212,41 @@ public class SpeechTextMatcher {
         }
 
         float required = requiredThreshold(bestIndex, currentIndex, userThreshold);
-        boolean accepted = bestScore >= required;
-        boolean backtracked = accepted && bestIndex < currentIndex;
+        boolean backtracked = bestIndex < currentIndex;
+        if (backtracked) {
+            // 回读是重要功能，但不能因为一句短句的模糊匹配就立刻回跳。
+            // 这里额外提高阈值并要求覆盖率，真正回读时仍会在 1～2 个 partial 内确认。
+            required = Math.max(required + 0.10f, clampThreshold(userThreshold + 0.08f));
+        }
+        boolean accepted = bestScore >= required && (!backtracked || bestProgress >= 0.58f);
         return new FollowMatch(accepted, bestIndex, bestScore, clamp(bestProgress), backtracked, bestDebug);
+    }
+
+    private FollowMatch stabilizeBacktrack(FollowMatch candidate, int currentIndex, float userThreshold) {
+        if (candidate == null || candidate.index >= currentIndex) return candidate;
+
+        if (candidate.index == pendingBacktrackIndex) pendingBacktrackHits++;
+        else {
+            pendingBacktrackIndex = candidate.index;
+            pendingBacktrackHits = 1;
+        }
+
+        float base = clampThreshold(userThreshold);
+        boolean veryStrong = candidate.score >= clampThreshold(base + 0.18f) && candidate.progress >= 0.78f;
+        boolean confirmed = veryStrong || pendingBacktrackHits >= 2;
+
+        if (confirmed) {
+            clearPendingBacktrack();
+            return candidate;
+        }
+
+        return new FollowMatch(false, currentIndex, candidate.score, 0f, false,
+                "backtrack pending " + pendingBacktrackHits + "/2 -> " + candidate.index);
+    }
+
+    private void clearPendingBacktrack() {
+        pendingBacktrackIndex = -1;
+        pendingBacktrackHits = 0;
     }
 
     private float requiredThreshold(int index, int currentIndex, float base) {

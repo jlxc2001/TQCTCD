@@ -46,6 +46,24 @@ public class AppSettings {
     public float voiceThreshold() { return sp.getFloat("voice_threshold", 0.72f); }
     public void setVoiceThreshold(float v) { sp.edit().putFloat("voice_threshold", v).apply(); }
 
+    /**
+     * 识别音量增益。1.0 表示原始音量；顶配机可以适当提高到 1.5～2.5。
+     * 过高会削波，反而可能降低识别稳定性，因此限制在 0.25～5.0。
+     */
+    public float voiceInputGain() { return sp.getFloat("voice_input_gain", 1.0f); }
+    public void setVoiceInputGain(float v) {
+        float safe = Math.max(0.25f, Math.min(5.0f, v));
+        sp.edit().putFloat("voice_input_gain", safe).apply();
+    }
+
+
+    /**
+     * 语音模式显示提前量。ASR 有天然延迟，默认把高亮提前 1 句，
+     * 让屏幕上最亮的内容更接近用户“马上要读”的位置。
+     */
+    public int voiceDisplayLeadSentences() { return sp.getInt("voice_display_lead", 1); }
+    public void setVoiceDisplayLeadSentences(int v) { sp.edit().putInt("voice_display_lead", Math.max(0, Math.min(2, v))).apply(); }
+
     public int remotePort() { return sp.getInt("remote_port", 47230); }
     public void setRemotePort(int port) { sp.edit().putInt("remote_port", port).apply(); }
 
